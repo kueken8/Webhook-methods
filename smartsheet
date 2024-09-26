@@ -1,0 +1,108 @@
+import requests
+from flask import Flask, request, jsonify
+import smartsheet
+import config
+
+app = Flask(__name__)
+
+@app.route('/webhook-update-contacts-picklist', methods=['POST'])
+def webhook_update_contacts():
+    if 'Smartsheet-Hook-Challenge' in request.headers:
+        challenge = request.headers['Smartsheet-Hook-Challenge']
+        return '', 200, {'Smartsheet-Hook-Response': challenge}
+    else:
+        Col_count_intake = ''
+        contact_namelist = ''
+        smart = smartsheet.Smartsheet(config.SMARTSHEET_API_TOKEN)
+
+        # Get all columns.
+        action = smart.Sheets.get_columns(Col_count_intake, include_all=True)
+        columns = action.data
+        action_2 = smart.Sheets.get_columns(contact_namelist, include_all=True)
+        columns_email = action_2.data
+
+
+        # For each column, get Cell value.
+        for col in columns:
+            working_list = []
+            if col.title == 'Primary Column':
+                continue
+            sheet = smart.Sheets.get_sheet(Col_count_intake, column_ids=col.id)
+            col_count = sheet.rows[0].cells[0].display_value
+            for col1 in columns_email:
+                if col.title == col1.title:
+                    sheet2 = smart.Sheets.get_sheet(contact_namelist, column_ids=col1.id)
+                    for x in range (int(col_count)):
+                        emails = sheet2.rows[x].cells[0].display_value
+                        if emails == None:
+                            continue
+                        working_list.append(emails)
+                    unique_list = list(set(working_list))
+                    column_spec = smartsheet.models.Column({
+                        'type': 'PICKLIST',
+                        'options': unique_list})
+                    response = smart.Sheets.update_column(contact_namelist, col1.id,
+                                                                column_spec)
+
+                    updated_column = response.result
+
+    return '', 200
+
+@app.route('/webhook-update-events-picklist', methods=['POST'])
+def webhook_update_events():
+    if 'Smartsheet-Hook-Challenge' in request.headers:
+        challenge = request.headers['Smartsheet-Hook-Challenge']
+        return '', 200, {'Smartsheet-Hook-Response': challenge}
+    else:
+        row_count_events = ''
+        event_list = ''
+        events_for_SKUs = ''
+        smart = smartsheet.Smartsheet(config.SMARTSHEET_API_TOKEN)
+
+        # Get all columns.
+        action = smart.Sheets.get_columns(row_count_events, include_all=True)
+        columns = action.data
+        action_2 = smart.Sheets.get_columns(event_list, include_all=True)
+        columns_event_name = action_2.data
+        action_3 = smart.Sheets.get_columns(events_for_SKUs, include_all = True)
+        columns_to_update = action_3.data
+
+        # For each column, print Id and Title.
+        for col in columns:
+            working_list = []
+            approval_list = []
+            if col.title == 'Primary Column':
+                continue
+            sheet = smart.Sheets.get_sheet(row_count_events, column_ids=col.id)
+            col_count = sheet.rows[0].cells[0].display_value
+            for col1 in columns_event_name:
+                if col.title == col1.title:
+                    sheet1 = smart.Sheets.get_sheet(event_list, column_ids=col1.id)
+                    for x in range (int(col_count)):
+                        events = sheet1.rows[x].cells[0].display_value
+                        if events == None:
+                            continue
+                        working_list.append(events)
+                if col1.title == "Approval Status":
+                    sheet2 = smart.Sheets.get_sheet(event_list, column_ids=col1.id)
+                    for y in range (int(col_count)):
+                        approvals = sheet2.rows[y].cells[0].display_value
+                        approval_list.append(approvals)
+                    combined_list = zip(working_list,approval_list)
+                    combined_list_filtered = [(working_list, approval_list) for working_list, approval_list in combined_list if approval_list != 'Approved']
+                    working_list, approval_list = zip(*combined_list_filtered)
+                    unique_list = list(set(working_list))
+                    for col2 in columns_to_update:
+                        if col.title == col2.title:
+                            column_spec = smartsheet.models.Column({
+                                'type': 'PICKLIST',
+                                'options': unique_list})
+                            response = smart.Sheets.update_column(events_for_SKUs, col2.id,
+                                                              column_spec)
+                            updated_column = response.result
+
+    return '', 200
+
+
+if __name__ == '__main__':
+    app.run(port=443)
